@@ -1,0 +1,8 @@
+{
+  "name": "베스트다이브 슈트 주문폼 (20%버전)",
+  "description": "구글 스프레드시트와 실시간 연동되어 상세한 맞춤 주문 사양 및 통관 정보를 수집하는 프리미엄 서베이 웹 어플리케이션",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
