@@ -30,7 +30,8 @@ import {
   CreditCard,
   Download,
   Megaphone,
-  MessageCircle
+  MessageCircle,
+  Receipt
 } from "lucide-react";
 import { toPng } from "html-to-image";
 import { renderReceiptCanvas } from "./receiptCanvas";
@@ -68,6 +69,13 @@ export default function App() {
   // Keep track of custom input states
   const [isCustomColor, setIsCustomColor] = useState(false);
   const [customColorText, setCustomColorText] = useState("");
+
+  // Receipt / Tax invoice issue option (선택 사항)
+  const [receiptType, setReceiptType] = useState<"none" | "cash_receipt" | "tax_invoice">("none");
+  const [cashReceiptPhone, setCashReceiptPhone] = useState("");
+  const [taxBizNumber, setTaxBizNumber] = useState("");
+  const [taxBizEmail, setTaxBizEmail] = useState("");
+  const [receiptError, setReceiptError] = useState("");
 
   // Validation feedback
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof OrderFormData, string>>>({});
@@ -189,6 +197,24 @@ export default function App() {
       }
       return;
     }
+
+    setReceiptError("");
+    if (receiptType === "cash_receipt" && !cashReceiptPhone.trim()) {
+      setReceiptError("현금영수증 발급을 위한 휴대폰 번호를 입력해주세요.");
+      const element = document.getElementById("field-receiptOption");
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    if (receiptType === "tax_invoice" && !taxBizNumber.trim()) {
+      setReceiptError("세금계산서 발급을 위한 사업자등록번호를 입력해주세요.");
+      const element = document.getElementById("field-receiptOption");
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
     
     setIsSubmitting(true);
 
@@ -199,6 +225,17 @@ export default function App() {
     const finalThickness = formData.thickness.trim();
     const finalSize = formData.size.trim();
 
+    // 추가 요구사항 뒤에 현금영수증 또는 세금계산서 발급 신청 정보 부착 (구글 시트 저장)
+    let combinedNotes = formData.customNotes.trim();
+    if (receiptType === "cash_receipt" && cashReceiptPhone.trim()) {
+      const receiptInfo = `[현금영수증 신청: ${cashReceiptPhone.trim()}]`;
+      combinedNotes = combinedNotes ? `${combinedNotes}\n${receiptInfo}` : receiptInfo;
+    } else if (receiptType === "tax_invoice" && taxBizNumber.trim()) {
+      const emailSuffix = taxBizEmail.trim() ? ` / 이메일: ${taxBizEmail.trim()}` : "";
+      const receiptInfo = `[세금계산서 신청: 사업자번호 ${taxBizNumber.trim()}${emailSuffix}]`;
+      combinedNotes = combinedNotes ? `${combinedNotes}\n${receiptInfo}` : receiptInfo;
+    }
+
     const finalPayload: OrderFormData = {
       ...formData,
       productName: finalProduct,
@@ -206,18 +243,17 @@ export default function App() {
       color: finalColor,
       thickness: finalThickness,
       size: finalSize,
+      customNotes: combinedNotes,
       price: 0,
       supplyPrice: 0,
       quantity: 1
     };
 
     // 구글 스프레드시트가 0으로 시작하는 우편번호나 연락처를 숫자로 자동 전환해 맨 앞 0을 생략하는 현상을 방지합니다.
-    // 또한 주문자 이름 뒤에 '(25%)'를 붙여 구글 시트에만 저장되도록 하고, 사용자 UI 화면 및 로컬 영수증에는 깨끗한 원본 이름이 유지되도록 합니다.
+    // 구글 시트 저장용 전송 페이로드에만 주문자 이름 뒤에 '(25%)'를 부착하여, 사용자 화면/영수증에는 순수 이름만 보이고 시트에만 저장되도록 연동합니다.
     const networkPayload = {
       ...finalPayload,
-      ordererName: finalPayload.ordererName
-        ? (finalPayload.ordererName.includes("(25%)") ? finalPayload.ordererName.trim() : `${finalPayload.ordererName.trim()} (25%)`)
-        : "",
+      ordererName: finalPayload.ordererName ? `${finalPayload.ordererName.trim()} (25%)` : finalPayload.ordererName,
       phone: finalPayload.phone && finalPayload.phone.startsWith("0") ? `'${finalPayload.phone}` : finalPayload.phone,
       postalCode: finalPayload.postalCode && finalPayload.postalCode.startsWith("0") ? `'${finalPayload.postalCode}` : finalPayload.postalCode
     };
@@ -319,6 +355,11 @@ export default function App() {
         // Reset state inputs
         setCustomColorText("");
         setIsCustomColor(false);
+        setReceiptType("none");
+        setCashReceiptPhone("");
+        setTaxBizNumber("");
+        setTaxBizEmail("");
+        setReceiptError("");
       }
     } catch (error: any) {
       console.error(error);
@@ -844,6 +885,153 @@ export default function App() {
                   />
                 </div>
 
+                {/* 7. 현금영수증 / 세금계산서 발급 신청 (선택 사항) */}
+                <div id="field-receiptOption" className="space-y-3 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-slate-700 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                      <span>7. 현금영수증 / 세금계산서 발급 신청</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-medium">선택 사항</span>
+                  </div>
+
+                  {/* 3가지 옵션 선택 버튼 */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setReceiptType("none"); setReceiptError(""); }}
+                      className={`py-2.5 px-2 rounded-lg text-xs font-semibold border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                        receiptType === "none"
+                          ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>신청 안 함</span>
+                      <span className="text-[10px] font-normal opacity-75">미발급</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setReceiptType("cash_receipt"); setReceiptError(""); }}
+                      className={`py-2.5 px-2 rounded-lg text-xs font-semibold border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                        receiptType === "cash_receipt"
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-500/20"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"
+                      }`}
+                    >
+                      <span>현금영수증</span>
+                      <span className="text-[10px] font-normal opacity-85">소득공제/지출증빙</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setReceiptType("tax_invoice"); setReceiptError(""); }}
+                      className={`py-2.5 px-2 rounded-lg text-xs font-semibold border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                        receiptType === "tax_invoice"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-500/20"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"
+                      }`}
+                    >
+                      <span>세금계산서</span>
+                      <span className="text-[10px] font-normal opacity-85">사업자용</span>
+                    </button>
+                  </div>
+
+                  {/* 현금영수증 선택 시 입력창 */}
+                  <AnimatePresence>
+                    {receiptType === "cash_receipt" && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-4 space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <span>현금영수증 발급용 휴대폰 번호</span>
+                            <span className="text-rose-500">*</span>
+                          </label>
+                          {formData.phone && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCashReceiptPhone(formData.phone);
+                                setReceiptError("");
+                              }}
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2 transition-colors cursor-pointer"
+                            >
+                              주문자 연락처 불러오기
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="휴대폰 번호 입력 (예: 010-1234-5678)"
+                          value={cashReceiptPhone}
+                          onChange={(e) => {
+                            setCashReceiptPhone(e.target.value);
+                            if (receiptError) setReceiptError("");
+                          }}
+                          className="w-full text-sm bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-850 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                        />
+                        <p className="text-[11px] text-slate-500">
+                          * 국세청 현금영수증(개인 소득공제용 또는 사업자 지출증빙용) 발행을 위한 번호입니다.
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* 세금계산서 선택 시 입력창 */}
+                  <AnimatePresence>
+                    {receiptType === "tax_invoice" && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-indigo-50/60 border border-indigo-200/80 rounded-xl p-4 space-y-3"
+                      >
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <span>사업자등록번호</span>
+                            <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="사업자등록번호 입력 (예: 123-45-67890)"
+                            value={taxBizNumber}
+                            onChange={(e) => {
+                              setTaxBizNumber(e.target.value);
+                              if (receiptError) setReceiptError("");
+                            }}
+                            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-850 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                            <span>세금계산서 수신용 이메일</span>
+                            <span className="text-[10px] text-slate-400 font-normal">선택</span>
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="계산서 수신 이메일 (예: tax@company.com)"
+                            value={taxBizEmail}
+                            onChange={(e) => setTaxBizEmail(e.target.value)}
+                            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-850 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          * 전자세금계산서 발행을 위해 국세청에 등록된 사업자등록번호를 기재해주세요.
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {receiptError && (
+                    <p className="text-[11px] text-rose-500 font-semibold">{receiptError}</p>
+                  )}
+                </div>
+
               </div>
 
               {/* Server actions footer */}
@@ -981,6 +1169,20 @@ export default function App() {
                   <div className="bg-white p-2.5 text-[10px] text-slate-650 border border-slate-200 rounded-lg max-h-[80px] overflow-y-auto leading-relaxed shadow-sm">
                     <span className="font-bold border-b border-slate-100 inline-block pb-0.5 text-[9px] uppercase tracking-wide text-blue-600">기타 특이 요구사항:</span>
                     <p className="pt-1">{formData.customNotes}</p>
+                  </div>
+                )}
+
+                {receiptType === "cash_receipt" && (
+                  <div className="bg-blue-50/80 p-2 text-[10px] text-blue-900 border border-blue-200 rounded-lg leading-tight">
+                    <span className="font-bold text-blue-700">현금영수증 신청:</span>{" "}
+                    <span>{cashReceiptPhone || "[휴대폰번호 입력 대기]"}</span>
+                  </div>
+                )}
+
+                {receiptType === "tax_invoice" && (
+                  <div className="bg-indigo-50/80 p-2 text-[10px] text-indigo-900 border border-indigo-200 rounded-lg leading-tight">
+                    <span className="font-bold text-indigo-700">세금계산서 신청:</span>{" "}
+                    <span>{taxBizNumber || "[사업자등록번호 입력 대기]"}</span>
                   </div>
                 )}
               </div>
